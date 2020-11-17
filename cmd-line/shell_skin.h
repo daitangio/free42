@@ -14,7 +14,7 @@ typedef struct {
 // keymap_entry *parse_keymap_entry(char *line, int lineno);
 
 int skin_getchar();
-void skin_rewind();
+// void skin_rewind();
 
 // No implementation will be provided below this line (fake methos)
 int skin_init_image(int type, int ncolors, const SkinColor *colors,
