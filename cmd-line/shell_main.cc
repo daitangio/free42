@@ -14,13 +14,24 @@
 #include "shell.h"
 
 #include "shell_main.h"
+#include <iostream>
 
 static bool decimal_point;
+state_type state;
 char free42dirname[FILENAMELEN];
 
 static FILE *statefile = NULL;
 static char statefilename[FILENAMELEN];
 static char printfilename[FILENAMELEN];
+#include "core_main.h"
+
+
+// Private functions
+static void init_shell_state(int4 version);
+static int read_shell_state(int4 *version);
+static int write_shell_state();
+static bool file_exists(const char *name);
+
 
 static void activate() {
 
@@ -125,11 +136,12 @@ static void activate() {
     snprintf(keymapfilename, FILENAMELEN, "%s/keymap", free42dirname);
 
     
+
     /****************************/
     /***** Read the key map *****/
     /****************************/
 
-    read_key_map(keymapfilename);
+    // @FIXME read_key_map(keymapfilename);
 
 
     /***********************************************************/
@@ -143,11 +155,7 @@ static void activate() {
 
     statefile = fopen(statefilename, "r");
     if (statefile != NULL) {
-        if (read_shell_state(&version)) {
-            if (skin_arg != NULL) {
-                strncpy(state.skinName, skin_arg, FILENAMELEN - 1);
-                state.skinName[FILENAMELEN - 1] = 0;
-            }
+        if (read_shell_state(&version)) {           
             init_mode = 1;
         } else {
             init_shell_state(-1);
@@ -182,48 +190,7 @@ static void activate() {
     /***** Build the main window *****/
     /*********************************/
 
-    char *xml = (char *) malloc(10240);
-    if (use_compactmenu)
-        sprintf(xml, mainWindowXml, compactMenuIntroXml, compactMenuOutroXml);
-    else
-        sprintf(xml, mainWindowXml, "", "");
-    GtkBuilder *builder = gtk_builder_new();
-    gtk_builder_add_from_string(builder, xml, -1, NULL);
-    free(xml);
-    GObject *obj = gtk_builder_get_object(builder, "window");
-    mainwindow = GTK_WIDGET(obj);
-    gtk_window_set_application(GTK_WINDOW(mainwindow), app);
-
-    icon_128 = gdk_pixbuf_new_from_xpm_data((const char **) icon_128_xpm);
-    icon_48 = gdk_pixbuf_new_from_xpm_data((const char **) icon_48_xpm);
-
-    gtk_window_set_icon(GTK_WINDOW(mainwindow), icon_128);
-    gtk_window_set_title(GTK_WINDOW(mainwindow), TITLE);
-    gtk_window_set_role(GTK_WINDOW(mainwindow), "Free42 Calculator");
-    gtk_window_set_resizable(GTK_WINDOW(mainwindow), FALSE);
-    no_mwm_resize_borders(mainwindow);
-    g_signal_connect(G_OBJECT(mainwindow), "delete_event",
-                     G_CALLBACK(delete_cb), NULL);
-    if (state.mainWindowKnown)
-        gtk_window_move(GTK_WINDOW(mainwindow), state.mainWindowX,
-                                            state.mainWindowY);
-
-    // The "Skin" menu is dynamic; we don't populate any items in it here.
-    // Instead, we attach a callback which scans the .free42 directory for
-    // available skins; this callback is invoked when the menu is about to
-    // be mapped.
-    GtkMenuItem *item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "skin_item"));
-    g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(skin_menu_update), NULL);
-
-    // With GTK 2 and GTK 3.4, the above logic worked fine, but with 3.24,
-    // it appears that the pop-up shell is laid out *before* the 'activate'
-    // callback is invoked. The result is that you do end up with the correct
-    // menu items, but they don't fit in the pop-up and so are cut off.
-    // Can't think of a proper way around this, but this at least will fix the
-    // Skin menu appearance in the most common use case, i.e. when the set of
-    // skins does not change while Free42 is running.
-    skin_menu_update(GTK_WIDGET(item));
-
+/*
     item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "states_item"));
     g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(statesCB), NULL);
     item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "show_printout_item"));
@@ -250,180 +217,31 @@ static void activate() {
     g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(clearPrintOutCB), NULL);
     item = GTK_MENU_ITEM(gtk_builder_get_object(builder, "about_item"));
     g_signal_connect(G_OBJECT(item), "activate", G_CALLBACK(aboutCB), NULL);
+    */
 
+    // Master cyvle
+    // read input
+    // when finished call core_paste(text);
+    // Try to print out via char *buf = core_copy();
 
-    /****************************************/
-    /* Drawing area for the calculator skin */
-    /****************************************/
-
-    GtkWidget *box = GTK_WIDGET(gtk_builder_get_object(builder, "box"));
-
-    int win_width, win_height;
-    skin_load(&win_width, &win_height);
-    GtkWidget *w = gtk_drawing_area_new();
-    gtk_widget_set_size_request(w, win_width, win_height);
-    gtk_box_pack_start(GTK_BOX(box), w, FALSE, FALSE, 0);
-    g_signal_connect(G_OBJECT(w), "draw", G_CALLBACK(draw_cb), NULL);
-    gtk_widget_add_events(w, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK);
-    g_signal_connect(G_OBJECT(w), "button-press-event", G_CALLBACK(button_cb), NULL);
-    g_signal_connect(G_OBJECT(w), "button-release-event", G_CALLBACK(button_cb), NULL);
-    gtk_widget_set_can_focus(w, TRUE);
-    g_signal_connect(G_OBJECT(w), "key-press-event", G_CALLBACK(key_cb), NULL);
-    g_signal_connect(G_OBJECT(w), "key-release-event", G_CALLBACK(key_cb), NULL);
-    calc_widget = w;
-
+    std::string line;
+    while (std::getline(std::cin, line))
+    {
+        std::cout << line << std::endl;
+    }
+    core_paste(line.c_str());
+    printf("Program...");
+    printf("%s",core_copy());
 
     /**************************************/
     /***** Build the print-out window *****/
     /**************************************/
 
-    // In the Motif version, I create an XImage and read the bitmap data into
-    // it; in the GTK version, that approach is not practical, since pixbuf
-    // only comes in 24-bit and 32-bit flavors -- which would mean wasting
-    // 25 megabytes for a 286x32768 pixbuf. So, instead, I use a 1 bpp buffer,
-    // and simply create pixbufs on the fly whenever I have to repaint.
-    print_bitmap = (unsigned char *) malloc(PRINT_SIZE);
-    print_text = (unsigned char *) malloc(PRINT_TEXT_SIZE);
-    // TODO - handle memory allocation failure
-
-    FILE *printfile = fopen(printfilename, "r");
-    if (printfile != NULL) {
-        int n = fread(&printout_bottom, 1, sizeof(int), printfile);
-        if (n == sizeof(int)) {
-            if (printout_bottom > PRINT_LINES) {
-                int excess = (printout_bottom - PRINT_LINES) * PRINT_BYTESPERLINE;
-                fseek(printfile, excess, SEEK_CUR);
-                printout_bottom = PRINT_LINES;
-            }
-            int bytes = printout_bottom * PRINT_BYTESPERLINE;
-            n = fread(print_bitmap, 1, bytes, printfile);
-            if (n == bytes) {
-                n = fread(&print_text_bottom, 1, sizeof(int), printfile);
-                int n2 = fread(&print_text_pixel_height, 1, sizeof(int), printfile);
-                if (n == sizeof(int) && n2 == sizeof(int)) {
-                    n = fread(print_text, 1, print_text_bottom, printfile);
-                    if (n != print_text_bottom) {
-                        print_text_bottom = 0;
-                        print_text_pixel_height = 0;
-                    }
-                } else {
-                    print_text_bottom = 0;
-                    print_text_pixel_height = 0;
-                }
-            } else {
-                printout_bottom = 0;
-                print_text_bottom = 0;
-                print_text_pixel_height = 0;
-            }
-        } else {
-            printout_bottom = 0;
-            print_text_bottom = 0;
-            print_text_pixel_height = 0;
-        }
-        fclose(printfile);
-    } else {
-        printout_bottom = 0;
-        print_text_bottom = 0;
-        print_text_pixel_height = 0;
-    }
-    printout_top = 0;
-    print_text_top = 0;
-
-    printwindow = gtk_application_window_new(GTK_APPLICATION(app));
-    gtk_window_set_icon(GTK_WINDOW(printwindow), icon_128);
-    gtk_window_set_title(GTK_WINDOW(printwindow), "Free42 Print-Out");
-    gtk_window_set_role(GTK_WINDOW(printwindow), "Free42 Print-Out");
-    g_signal_connect(G_OBJECT(printwindow), "delete_event",
-                     G_CALLBACK(delete_print_cb), NULL);
-
-    GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER, GTK_POLICY_ALWAYS);
-    gtk_container_add(GTK_CONTAINER(printwindow), scroll);
-    GtkWidget *view = gtk_viewport_new(NULL, NULL);
-    gtk_container_add(GTK_CONTAINER(scroll), view);
-    print_widget = gtk_drawing_area_new();
-    gtk_widget_set_size_request(print_widget, 358, printout_bottom);
-    gtk_container_add(GTK_CONTAINER(view), print_widget);
-    print_adj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scroll));
-    g_signal_connect(G_OBJECT(print_widget), "draw", G_CALLBACK(print_draw_cb), NULL);
-    gtk_widget_set_can_focus(print_widget, TRUE);
-    g_signal_connect(G_OBJECT(print_widget), "key-press-event", G_CALLBACK(print_key_cb), NULL);
-
-    gtk_widget_show(print_widget);
-    gtk_widget_show(view);
-    gtk_widget_show(scroll);
-
-    GdkGeometry geom;
-    geom.min_width = 358;
-    geom.max_width = 358;
-    geom.min_height = 1;
-    geom.max_height = 32767;
-    gtk_window_set_geometry_hints(GTK_WINDOW(printwindow), NULL, &geom, GdkWindowHints(GDK_HINT_MIN_SIZE | GDK_HINT_MAX_SIZE));
-
-    if (state.printWindowKnown)
-        gtk_window_move(GTK_WINDOW(printwindow), state.printWindowX,
-                                                 state.printWindowY);
-    gint width, height;
-    gtk_window_get_size(GTK_WINDOW(printwindow), &width, &height);
-    gtk_window_resize(GTK_WINDOW(printwindow), width,
-            state.printWindowKnown ? state.printWindowHeight : 600);
-
-    gtk_widget_realize(printwindow);
-    gtk_widget_realize(print_widget);
-    scroll_printout_to_bottom();
-
-
+    
     /*************************************************/
     /***** Show main window & start the emulator *****/
     /*************************************************/
 
-    if (state.printWindowKnown && state.printWindowMapped)
-        gtk_widget_show(printwindow);
-    gtk_widget_show_all(mainwindow);
-    gtk_widget_show(mainwindow);
-
-    core_init(init_mode, version, core_state_file_name, core_state_file_offset);
-    if (core_powercycle())
-        enable_reminder();
-
-    /* Check if /proc/apm exists and is readable, and if so,
-     * start the battery checker "thread" that keeps the battery
-     * annunciator on the calculator display up to date.
-     */
-    FILE *apm = fopen("/proc/apm", "r");
-    if (apm != NULL) {
-        fclose(apm);
-        shell_low_battery();
-        g_timeout_add(60000, battery_checker, NULL);
-    } else {
-        /* Check if /sys/class/power_supply exists */
-        DIR *d = opendir("/sys/class/power_supply");
-        if (d != NULL) {
-            closedir(d);
-            shell_low_battery();
-            g_timeout_add(60000, battery_checker, NULL);
-        }
-    }
-
-    if (pipe(pype) != 0)
-        fprintf(stderr, "Could not create pipe for signal handler; not catching signals.\n");
-    else {
-        GIOChannel *channel = g_io_channel_unix_new(pype[0]);
-        GError *err = NULL;
-        g_io_channel_set_encoding(channel, NULL, &err);
-        g_io_channel_set_flags(channel,     
-            (GIOFlags) (g_io_channel_get_flags(channel) | G_IO_FLAG_NONBLOCK), &err);
-        g_io_add_watch(channel, G_IO_IN, gt_signal_handler, NULL);
-
-        struct sigaction act;
-        act.sa_handler = int_term_handler;
-        sigemptyset(&act.sa_mask);
-        sigaddset(&act.sa_mask, SIGINT);
-        sigaddset(&act.sa_mask, SIGTERM);
-        act.sa_flags = 0;
-        sigaction(SIGINT, &act, NULL);
-        sigaction(SIGTERM, &act, NULL);
-    }
 }
 
 
@@ -609,6 +427,115 @@ static bool file_exists(const char *name) {
     return stat(name, &st) == 0;
 }
 
+// FIXME SHELL STATE. Retain compatibility with GTK version if possible
+
+static void init_shell_state(int4 version) {
+    switch (version) {
+        case -1:
+            state.extras = 0;
+            /* fall through */
+        case 0:
+            state.printerToTxtFile = 0;
+            state.printerToGifFile = 0;
+            state.printerTxtFileName[0] = 0;
+            state.printerGifFileName[0] = 0;
+            state.printerGifMaxLength = 256;
+            /* fall through */
+        case 1:
+            state.mainWindowKnown = 0;
+            state.printWindowKnown = 0;
+            /* fall through */
+        case 2:
+            state.skinName[0] = 0;
+            /* fall through */
+        case 3:
+            state.singleInstance = 1;
+            /* fall through */
+        case 4:
+            strcpy(state.coreName, "Untitled");
+            /* fall through */
+        case 5:
+            core_settings.matrix_singularmatrix = false;
+            core_settings.matrix_outofrange = false;
+            core_settings.auto_repeat = true;
+            /* fall through */
+        case 6:
+            state.old_repaint = true;
+            /* fall through */
+        case 7:
+            /* current version (SHELL_VERSION = 7),
+             * so nothing to do here since everything
+             * was initialized from the state file.
+             */
+            ;
+    }
+}
+
+static int read_shell_state(int4 *ver) {
+    int4 magic;
+    int4 version;
+    int4 state_size;
+    int4 state_version;
+
+    if (fread(&magic, 1, sizeof(int4), statefile) != sizeof(int4))
+        return 0;
+    if (magic != FREE42_MAGIC)
+        return 0;
+
+    if (fread(&version, 1, sizeof(int4), statefile) != sizeof(int4))
+        return 0;
+    if (version == 0) {
+        /* State file version 0 does not contain shell state,
+         * only core state, so we just hard-init the shell.
+         */
+        init_shell_state(-1);
+        *ver = version;
+        return 1;
+    }
+    
+    if (fread(&state_size, 1, sizeof(int4), statefile) != sizeof(int4))
+        return 0;
+    if (fread(&state_version, 1, sizeof(int4), statefile) != sizeof(int4))
+        return 0;
+    if (state_version < 0 || state_version > SHELL_VERSION)
+        /* Unknown shell state version */
+        return 0;
+    if (fread(&state, 1, state_size, statefile) != (size_t) state_size)
+        return 0;
+    if (state_version >= 6) {
+        core_settings.matrix_singularmatrix = state.matrix_singularmatrix;
+        core_settings.matrix_outofrange = state.matrix_outofrange;
+        core_settings.auto_repeat = state.auto_repeat;
+    }
+
+    init_shell_state(state_version);
+    *ver = version;
+    return 1;
+}
+
+static int write_shell_state() {
+    int4 magic = FREE42_MAGIC;
+    int4 version = 27;
+    int4 state_size = sizeof(state_type);
+    int4 state_version = SHELL_VERSION;
+
+    if (fwrite(&magic, 1, sizeof(int4), statefile) != sizeof(int4))
+        return 0;
+    if (fwrite(&version, 1, sizeof(int4), statefile) != sizeof(int4))
+        return 0;
+    if (fwrite(&state_size, 1, sizeof(int4), statefile) != sizeof(int4))
+        return 0;
+    if (fwrite(&state_version, 1, sizeof(int4), statefile) != sizeof(int4))
+        return 0;
+    state.matrix_singularmatrix = core_settings.matrix_singularmatrix;
+    state.matrix_outofrange = core_settings.matrix_outofrange;
+    state.auto_repeat = core_settings.auto_repeat;
+    if (fwrite(&state, 1, sizeof(state_type), statefile) != sizeof(int4))
+        return 0;
+
+    return 1;
+}
+
 
 int main(int argc, char *argv[]) {
     fprintf(stderr,"SETUP....");
@@ -616,3 +543,4 @@ int main(int argc, char *argv[]) {
     // Mmmm call a gtk-simil activate method to run the REPL loop somewhat
     activate();
 }
+
